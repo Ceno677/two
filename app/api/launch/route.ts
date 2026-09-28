@@ -3,16 +3,11 @@ import {
   ComputeBudgetProgram,
   PublicKey,
   Transaction,
+  TransactionInstruction,
 } from "@solana/web3.js";
 import { OnlinePumpSdk, PUMP_SDK } from "@pump-fun/pump-sdk";
-import {
-  createAssociatedTokenAccountIdempotentInstruction,
-  getAssociatedTokenAddressSync,
-} from "@solana/spl-token";
 import { z } from "zod";
 import { getConnection } from "@/lib/solana";
-import { initializeDirectionalConfigInstruction } from "@/lib/directional-program";
-import { getDirectionalProgramStatus } from "@/lib/program-status";
 
 export const runtime = "nodejs";
 
@@ -38,14 +33,6 @@ function publicKey(value: string, field: string) {
 }
 
 export async function POST(request: Request) {
-  const program = await getDirectionalProgramStatus();
-  if (!program.ready) {
-    return NextResponse.json({
-      code: "LAUNCH_NOT_ENABLED",
-      message: "The directional fee program has not been deployed on Solana mainnet yet.",
-    }, { status: 503 });
-  }
-
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ code: "INVALID_REQUEST", issues: parsed.error.issues }, { status: 400 });
@@ -54,7 +41,6 @@ export async function POST(request: Request) {
   try {
     const authority = publicKey(parsed.data.authority, "authority");
     const mint = publicKey(parsed.data.mint, "mint");
-    const programId = program.programId;
     const pair = publicKey(parsed.data.canonicalPairMint, "pair mint");
     const buyMint = publicKey(parsed.data.buyFeeAssetMint, "buy fee mint");
     const sellMint = publicKey(parsed.data.sellFeeAssetMint, "sell fee mint");
@@ -73,27 +59,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ code: "DESTINATION_MINT_NOT_FOUND" }, { status: 422 });
     }
 
-    const { config, instruction: initializeConfig } = initializeDirectionalConfigInstruction({
-      programId,
-      authority,
-      tokenMint: mint,
-      routeAuthority: authority,
-      canonicalPairMint: pair,
-      buyFeeAssetMint: buyMint,
-      sellFeeAssetMint: sellMint,
-      buyDestination: authority,
-      sellDestination: authority,
-      routingThresholdRaw: 5n * 10n ** BigInt(Math.max(0, resolvedPair.decimals - 2)),
-      maxBatchIntervalSeconds: 1_800,
-      protocolShareBps: parsed.data.protocolShareBps,
-      maxSlippageBps: parsed.data.maxSlippageBps,
-    });
     const createCoin = await PUMP_SDK.createV2Instruction({
       mint,
       name: parsed.data.name,
       symbol: parsed.data.symbol.toUpperCase(),
       uri: parsed.data.metadataUri,
-      creator: config,
+      creator: authority,
       user: authority,
       mayhemMode: false,
       cashback: false,
@@ -101,19 +72,19 @@ export async function POST(request: Request) {
       quoteTokenProgram: resolvedPair.quoteTokenProgram,
       holderReward: false,
     });
-    const configQuoteVault = getAssociatedTokenAddressSync(
-      resolvedPair.mint,
-      config,
-      true,
-      resolvedPair.quoteTokenProgram,
-    );
-    const createConfigQuoteVault = createAssociatedTokenAccountIdempotentInstruction(
-      authority,
-      configQuoteVault,
-      config,
-      resolvedPair.mint,
-      resolvedPair.quoteTokenProgram,
-    );
+    const memo = new TransactionInstruction({
+      programId: new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
+      keys: [{ pubkey: authority, isSigner: true, isWritable: false }],
+      data: Buffer.from(JSON.stringify({
+        app: "TWO",
+        version: 1,
+        mint: mint.toBase58(),
+        pair: pair.toBase58(),
+        buyFeeAsset: buyMint.toBase58(),
+        sellFeeAsset: sellMint.toBase58(),
+        mode: "direct-creator",
+      })),
+    });
     const createBlockhash = await connection.getLatestBlockhash("confirmed");
     const createTransaction = new Transaction({
       feePayer: authority,
@@ -122,16 +93,7 @@ export async function POST(request: Request) {
     }).add(
       ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
       createCoin,
-    );
-    const configureBlockhash = await connection.getLatestBlockhash("confirmed");
-    const configureTransaction = new Transaction({
-      feePayer: authority,
-      blockhash: configureBlockhash.blockhash,
-      lastValidBlockHeight: configureBlockhash.lastValidBlockHeight,
-    }).add(
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 250_000 }),
-      initializeConfig,
-      createConfigQuoteVault,
+      memo,
     );
 
     const encode = (transaction: Transaction) => transaction.serialize({
@@ -142,11 +104,10 @@ export async function POST(request: Request) {
     return NextResponse.json({
       transactions: [
         { kind: "CREATE_TOKEN", transaction: encode(createTransaction), ...createBlockhash },
-        { kind: "CONFIGURE_DIRECTIONAL_FEES", transaction: encode(configureTransaction), ...configureBlockhash },
       ],
       mint: mint.toBase58(),
-      config: config.toBase58(),
-      configQuoteVault: configQuoteVault.toBase58(),
+      creator: authority.toBase58(),
+      executionMode: "DIRECT_CREATOR",
     });
   } catch (error) {
     return NextResponse.json({

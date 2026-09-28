@@ -215,9 +215,7 @@ async function launch(provider: WalletProvider, authority: string) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(parameters),
   }));
-  if (!quote.executionReady) {
-    throw new Error("The one-time Solana fee program deployment is still pending. Token launches unlock automatically after it lands.");
-  }
+  if (!quote.executionReady) throw new Error("Token launching is temporarily unavailable.");
 
   setStatus("Uploading token image and metadata…", "working");
   const metadata = new FormData();
@@ -244,12 +242,12 @@ async function launch(provider: WalletProvider, authority: string) {
     }),
   }));
   const phases = built.transactions as Array<{
-    kind: "CREATE_TOKEN" | "CONFIGURE_DIRECTIONAL_FEES";
+    kind: "CREATE_TOKEN";
     transaction: string;
     blockhash: string;
     lastValidBlockHeight: number;
   }>;
-  if (!Array.isArray(phases) || phases.length !== 2) throw new Error("Launch builder returned an invalid transaction set.");
+  if (!Array.isArray(phases) || phases.length !== 1) throw new Error("Launch builder returned an invalid transaction set.");
   const transactions = phases.map((phase) => Transaction.from(
     Uint8Array.from(atob(phase.transaction), (character) => character.charCodeAt(0)),
   ));
@@ -285,7 +283,6 @@ async function launch(provider: WalletProvider, authority: string) {
     sellSymbol: selectedSymbol(el<HTMLSelectElement>("#tl-sell")!),
   };
   localStorage.setItem(LAST_LAUNCH_KEY, JSON.stringify(managed));
-  renderFeeManager(managed);
   setStatus(`Launch confirmed. Mint: ${built.mint}`, "success");
 }
 
@@ -298,8 +295,6 @@ async function setup() {
   }
   try {
     await loadAssets();
-    const previous = localStorage.getItem(LAST_LAUNCH_KEY);
-    if (previous) renderFeeManager(JSON.parse(previous) as ManagedLaunch);
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "Asset loading failed", "error");
   }

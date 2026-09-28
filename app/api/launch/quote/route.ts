@@ -4,7 +4,6 @@ import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { OnlinePumpSdk } from "@pump-fun/pump-sdk";
 import { z } from "zod";
 import { getConnection } from "@/lib/solana";
-import { getDirectionalProgramStatus } from "@/lib/program-status";
 
 const requestSchema = z.object({
   name: z.string().trim().min(1).max(32),
@@ -30,16 +29,15 @@ export async function POST(request: Request) {
     const accounts = await connection.getMultipleAccountsInfo([buyMint, sellMint], "confirmed");
     const validOwner = (owner: PublicKey) => owner.equals(TOKEN_PROGRAM_ID) || owner.equals(TOKEN_2022_PROGRAM_ID);
     if (accounts.some((account) => !account || !validOwner(account.owner))) return NextResponse.json({ code: "INVALID_DESTINATION_MINT" }, { status: 422 });
-    const program = await getDirectionalProgramStatus();
-
     return NextResponse.json({
       verifiedAt: new Date().toISOString(),
       canonicalPairMint: pair.toBase58(), buyFeeAssetMint: buyMint.toBase58(), sellFeeAssetMint: sellMint.toBase58(),
       traderOutputModified: false, protocolShareBps: parsed.data.protocolShareBps,
       canonicalPairDecimals: resolvedPair.decimals,
       routeTrigger: { minimumRawAmount: (5n * 10n ** BigInt(Math.max(0, resolvedPair.decimals - 2))).toString(), displayAmount: "0.05", maximumIntervalSeconds: 1800 },
-      executionReady: program.ready,
-      executionReason: program.ready ? null : program.code,
+      executionReady: true,
+      executionMode: "DIRECT_CREATOR",
+      executionReason: null,
     });
   } catch (error) {
     return NextResponse.json({ code: "QUOTE_FAILED", message: error instanceof Error ? error.message : "Quote validation failed" }, { status: 503 });
