@@ -38,8 +38,7 @@ function publicKey(value: string, field: string) {
 
 export async function POST(request: Request) {
   const programValue = process.env.DIRECTIONAL_FEE_PROGRAM_ID;
-  const routeAuthorityValue = process.env.ROUTE_AUTHORITY_PUBLIC_KEY;
-  if (!programValue || !routeAuthorityValue || process.env.MAINNET_CANARY_VERIFIED !== "true") {
+  if (!programValue || process.env.MAINNET_CANARY_VERIFIED !== "true") {
     return NextResponse.json({
       code: "LAUNCH_NOT_ENABLED",
       message: "Mainnet launch is locked until the custody program and both directional canaries are verified.",
@@ -55,7 +54,6 @@ export async function POST(request: Request) {
     const authority = publicKey(parsed.data.authority, "authority");
     const mint = publicKey(parsed.data.mint, "mint");
     const programId = publicKey(programValue, "program id");
-    const routeAuthority = publicKey(routeAuthorityValue, "route authority");
     const pair = publicKey(parsed.data.canonicalPairMint, "pair mint");
     const buyMint = publicKey(parsed.data.buyFeeAssetMint, "buy fee mint");
     const sellMint = publicKey(parsed.data.sellFeeAssetMint, "sell fee mint");
@@ -78,7 +76,7 @@ export async function POST(request: Request) {
       programId,
       authority,
       tokenMint: mint,
-      routeAuthority,
+      routeAuthority: authority,
       canonicalPairMint: pair,
       buyFeeAssetMint: buyMint,
       sellFeeAssetMint: sellMint,

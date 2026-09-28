@@ -1,6 +1,7 @@
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { build } from "esbuild";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const source = join(root, "two", "public");
@@ -18,8 +19,22 @@ for (const page of pages) {
   }
   html = html
     .replaceAll("https://flowfin.framer.website/", "https://near-jade.vercel.app/")
+    .replaceAll("routed through NEAR Protocol", "routed on Solana")
+    .replaceAll("Routing through NEAR Intents", "Routing through Jupiter")
     .replace("</body>", '<script src="/two-nav.js" defer></script></body>');
+  if (page === "launch.html") {
+    html = html.replace("</body>", '<script src="/launch-client.js" defer></script></body>');
+  }
   writeFileSync(join(destination, page), html, "utf8");
 }
+
+await build({
+  entryPoints: [join(root, "frontend", "launch-client.ts")],
+  outfile: join(destination, "launch-client.js"),
+  bundle: true,
+  minify: true,
+  platform: "browser",
+  target: ["es2022"],
+});
 
 console.log(`Prepared ${pages.length} TWO pages in ${destination}`);
