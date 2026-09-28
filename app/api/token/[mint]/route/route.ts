@@ -26,6 +26,7 @@ import {
 } from "@/lib/directional-program";
 import { JupiterAdapter } from "@/services/router/jupiter";
 import type { RouterInstruction } from "@/services/router/types";
+import { getDirectionalProgramStatus } from "@/lib/program-status";
 
 export const runtime = "nodejs";
 
@@ -53,7 +54,8 @@ function instruction(raw: RouterInstruction) {
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ mint: string }> }) {
-  if (!process.env.DIRECTIONAL_FEE_PROGRAM_ID || process.env.MAINNET_CANARY_VERIFIED !== "true") {
+  const program = await getDirectionalProgramStatus();
+  if (!program.ready) {
     return NextResponse.json({ code: "ROUTING_NOT_ENABLED" }, { status: 503 });
   }
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
@@ -65,7 +67,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ min
     const authority = publicKey(parsed.data.authority, "authority");
     const amount = BigInt(parsed.data.amountRaw);
     if (amount <= 0n) return NextResponse.json({ code: "INVALID_ROUTE_AMOUNT" }, { status: 400 });
-    const programId = new PublicKey(process.env.DIRECTIONAL_FEE_PROGRAM_ID);
+    const programId = program.programId;
     const configAddress = directionalConfigPda(programId, mint);
     const connection = getConnection();
     const configInfo = await connection.getAccountInfo(configAddress, "confirmed");

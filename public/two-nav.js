@@ -13,6 +13,18 @@
       link.setAttribute("aria-current", "page");
       link.dataset.twoCurrent = "true";
     }
+
+    // The exported Framer runtime can retain click handlers from the original
+    // prototype. Own internal navigation here so the static Next.js pages
+    // always move between real routes.
+    const href = link.getAttribute("href");
+    if (href && href.startsWith("/") && !href.startsWith("//")) {
+      link.addEventListener("click", (event) => {
+        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        window.location.assign(href);
+      }, true);
+    }
   });
 
   document.querySelectorAll("nav [data-framer-name='Hamburger']").forEach((button) => {
@@ -45,6 +57,10 @@
 
   const style = document.createElement("style");
   style.textContent = `
+    /* Keep the imported header above the custom launch/explore page layer. */
+    .framer-5v2ulr-container { z-index: 1000 !important; pointer-events: none !important; }
+    .framer-5v2ulr-container nav { position: relative; z-index: 1001 !important; pointer-events: auto !important; }
+    .framer-5v2ulr-container nav a { pointer-events: auto !important; touch-action: manipulation; }
     nav a[data-two-current="true"] { opacity: 1 !important; }
     nav a[data-two-current="true"] .framer-text { font-weight: 700 !important; }
     nav [data-framer-name="Hamburger"] { cursor: pointer; }

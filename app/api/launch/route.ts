@@ -12,6 +12,7 @@ import {
 import { z } from "zod";
 import { getConnection } from "@/lib/solana";
 import { initializeDirectionalConfigInstruction } from "@/lib/directional-program";
+import { getDirectionalProgramStatus } from "@/lib/program-status";
 
 export const runtime = "nodejs";
 
@@ -37,11 +38,11 @@ function publicKey(value: string, field: string) {
 }
 
 export async function POST(request: Request) {
-  const programValue = process.env.DIRECTIONAL_FEE_PROGRAM_ID;
-  if (!programValue || process.env.MAINNET_CANARY_VERIFIED !== "true") {
+  const program = await getDirectionalProgramStatus();
+  if (!program.ready) {
     return NextResponse.json({
       code: "LAUNCH_NOT_ENABLED",
-      message: "Mainnet launch is locked until the custody program and both directional canaries are verified.",
+      message: "The directional fee program has not been deployed on Solana mainnet yet.",
     }, { status: 503 });
   }
 
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
   try {
     const authority = publicKey(parsed.data.authority, "authority");
     const mint = publicKey(parsed.data.mint, "mint");
-    const programId = publicKey(programValue, "program id");
+    const programId = program.programId;
     const pair = publicKey(parsed.data.canonicalPairMint, "pair mint");
     const buyMint = publicKey(parsed.data.buyFeeAssetMint, "buy fee mint");
     const sellMint = publicKey(parsed.data.sellFeeAssetMint, "sell fee mint");

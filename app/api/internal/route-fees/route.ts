@@ -15,5 +15,8 @@ export async function POST(request: Request) {
     code: "ROUTING_EXECUTION_DISABLED",
     message: "Raw fees remain in the creator PDA until an audited route executor is deployed.",
   }, { status: 503 });
-  return NextResponse.json({ code: "CANARY_NOT_VERIFIED" }, { status: 503 });
+  return NextResponse.json({
+    code: "USE_TOKEN_ROUTE_ENDPOINT",
+    message: "Fee conversions are built per token and side at /api/token/:mint/route.",
+  }, { status: 410 });
 }

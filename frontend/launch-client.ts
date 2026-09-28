@@ -215,7 +215,9 @@ async function launch(provider: WalletProvider, authority: string) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(parameters),
   }));
-  if (!quote.executionReady) throw new Error("Mainnet beta is locked until the custody program canary finishes.");
+  if (!quote.executionReady) {
+    throw new Error("The one-time Solana fee program deployment is still pending. Token launches unlock automatically after it lands.");
+  }
 
   setStatus("Uploading token image and metadata…", "working");
   const metadata = new FormData();
