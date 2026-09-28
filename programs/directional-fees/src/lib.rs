@@ -4,11 +4,12 @@ use anchor_lang::solana_program::{
     program::invoke_signed,
     pubkey,
 };
-use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
+use anchor_spl::token_interface::{self, Mint, SyncNative, TokenAccount, TokenInterface};
 
 declare_id!("5Ets22zpVnCjn7m5uFrS91Rs5Eug1nFo5PKwbq8J1A7J");
 
 const JUPITER_V6: Pubkey = pubkey!("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+const WRAPPED_SOL_MINT: Pubkey = pubkey!("So11111111111111111111111111111111111111112");
 const MAX_PROTOCOL_SHARE_BPS: u16 = 2_000;
 const MAX_SLIPPAGE_BPS: u16 = 500;
 
@@ -74,6 +75,32 @@ pub mod directional_fees {
         require_keys_eq!(ctx.accounts.output_vault.mint, output_mint, DirectionalFeeError::InvalidOutputMint);
         require_keys_eq!(ctx.accounts.output_vault.owner, destination, DirectionalFeeError::InvalidDestination);
 
+        // Pump stores SOL-denominated creator fees as lamports on the creator
+        // account. Move only the requested surplus into the config's WSOL ATA
+        // so Jupiter can consume it like every other quote asset.
+        if config.canonical_pair_mint == WRAPPED_SOL_MINT {
+            let config_info = ctx.accounts.config.to_account_info();
+            let input_info = ctx.accounts.input_vault.to_account_info();
+            let rent_floor = Rent::get()?.minimum_balance(config_info.data_len());
+            let available = config_info.lamports().saturating_sub(rent_floor);
+            require!(available >= args.amount_in, DirectionalFeeError::InsufficientRawFees);
+            let config_lamports = config_info
+                .lamports()
+                .checked_sub(args.amount_in)
+                .ok_or(DirectionalFeeError::InvalidSettlement)?;
+            let input_lamports = input_info
+                .lamports()
+                .checked_add(args.amount_in)
+                .ok_or(DirectionalFeeError::InvalidSettlement)?;
+            **config_info.try_borrow_mut_lamports()? = config_lamports;
+            **input_info.try_borrow_mut_lamports()? = input_lamports;
+            token_interface::sync_native(CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                SyncNative { account: input_info },
+            ))?;
+            ctx.accounts.input_vault.reload()?;
+        }
+
         let input_before = ctx.accounts.input_vault.amount;
         let output_before = ctx.accounts.output_vault.amount;
         require!(input_before >= args.amount_in, DirectionalFeeError::InsufficientRawFees);
@@ -135,7 +162,7 @@ pub struct AdminConfig<'info> {
 #[derive(Accounts)]
 #[instruction(args: ExecuteRouteArgs)]
 pub struct ExecuteRoute<'info> {
-    #[account(seeds = [b"directional-fee", config.token_mint.as_ref()], bump = config.bump)]
+    #[account(mut, seeds = [b"directional-fee", config.token_mint.as_ref()], bump = config.bump)]
     pub config: Account<'info, DirectionalFeeConfig>,
     #[account(mut)] pub route_authority: Signer<'info>,
     #[account(mut)] pub input_vault: InterfaceAccount<'info, TokenAccount>,
