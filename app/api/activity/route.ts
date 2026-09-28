@@ -188,7 +188,10 @@ export async function POST(request: Request) {
       body,
       signal: AbortSignal.timeout(20_000),
     });
-    if (!upload.ok) throw new Error(`Launch registry write failed (${upload.status})`);
+    if (!upload.ok) {
+      const detail = (await upload.text()).slice(0, 300);
+      throw new Error(`Launch registry write failed (${upload.status}): ${detail}`);
+    }
     const result = await upload.json() as { data?: { cid?: string } };
     return NextResponse.json({ registered: true, cid: result.data?.cid ?? null });
   } catch (error) {
