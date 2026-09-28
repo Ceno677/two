@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TradeSide {
+  BUY
+  SELL
+}
+
+enum Finality {
+  OBSERVED
+  CONFIRMED
+  FINALIZED
+}
+
+enum FeeEventStatus {
+  OBSERVED
+  CONFIRMED
+  FINALIZED
+  BATCHED
+}
+
+enum BatchStatus {
+  PENDING
+  READY_TO_ROUTE
+  QUOTING
+  ROUTE_CREATED
+  SUBMITTED
+  CONFIRMED
+  FAILED
+  RETRYABLE
+  SETTLED
+}
+
+enum RouteProvider {
+  JUPITER
+  NEAR_INTENTS
+}
+
+enum TransactionStatus {
+  OBSERVED
+  CONFIRMED
+  FINALIZED
+  FAILED
+}
+
+model Token {
+  id String @id @default(cuid())
+  mint String @unique
+  name String
+  symbol String
+  imageUrl String?
+  description String?
+  creatorWallet String
+  pumpCreatorPda String @unique
+  canonicalPairMint String
+  canonicalPairSymbol String
+  bondingCurve String?
+  pumpswapPool String?
+  createdAt DateTime @default(now())
+  config DirectionalFeeConfig?
+  feeEvents FeeEvent[]
+  feeBatches FeeBatch[]
+  vaultBalances VaultBalance[]
+}
+
+model DirectionalFeeConfig {
+  id String @id @default(cuid())
+  tokenId String @unique
+  tokenMint String @unique
+  canonicalPairMint String
+  buyFeeAssetMint String
+  buyFeeAssetSymbol String
+  sellFeeAssetMint String
+  sellFeeAssetSymbol String
+  buyDestination String
+  sellDestination String
+  routingThresholdRaw BigInt
+  maxBatchIntervalSecs Int
+  maxSlippageBps Int
+  protocolShareBps Int @default(0)
+  enabled Boolean @default(true)
+  createdAt DateTime @default(now())
+  token Token @relation(fields: [tokenId], references: [id])
+  @@index([enabled])
+}
+
+model FeeEvent {
+  id String @id @default(cuid())
+  tokenId String
+  tokenMint String
+  tradeSignature String
+  eventIndex Int
+  slot BigInt
+  finality Finality @default(OBSERVED)
+  tradeSide TradeSide
+  rawFeeAsset String
+  rawFeeAmount BigInt
+  destinationAsset String
+  status FeeEventStatus @default(OBSERVED)
+  blockTime DateTime?
+  createdAt DateTime @default(now())
+  finalizedAt DateTime?
+  batchId String?
+  token Token @relation(fields: [tokenId], references: [id])
+  batch FeeBatch? @relation(fields: [batchId], references: [id])
+  @@unique([tradeSignature, eventIndex])
+  @@index([tokenMint, tradeSide, status])
+}
+
+model FeeBatch {
+  id String @id @default(cuid())
+  tokenId String
+  tokenMint String
+  side TradeSide
+  rawAmount BigInt
+  protocolFeeAmount BigInt @default(0)
+  routableAmount BigInt
+  inputAsset String
+  outputAsset String
+  quotedOutput BigInt?
+  minimumOutput BigInt?
+  actualOutput BigInt?
+  status BatchStatus @default(PENDING)
+  attempts Int @default(0)
+  lastError String?
+  createdAt DateTime @default(now())
+  quoteExpiresAt DateTime?
+  submittedAt DateTime?
+  settledAt DateTime?
+  token Token @relation(fields: [tokenId], references: [id])
+  feeEvents FeeEvent[]
+  routes FeeRoute[]
+  @@index([status, createdAt])
+  @@index([tokenMint, side])
+}
+
+model FeeRoute {
+  id String @id @default(cuid())
+  batchId String
+  provider RouteProvider
+  providerQuoteId String?
+  inputAmount BigInt
+  expectedOutput BigInt
+  minimumOutput BigInt
+  actualOutput BigInt?
+  quoteExpiresAt DateTime
+  routeSignature String? @unique
+  rawQuote Json
+  createdAt DateTime @default(now())
+  settledAt DateTime?
+  batch FeeBatch @relation(fields: [batchId], references: [id])
+}
+
+model VaultBalance {
+  id String @id @default(cuid())
+  tokenId String
+  tokenMint String
+  side TradeSide
+  assetMint String
+  rawPendingAmount BigInt @default(0)
+  settledAmount BigInt @default(0)
+  onchainAmount BigInt @default(0)
+  reconciledSlot BigInt?
+  updatedAt DateTime @updatedAt
+  token Token @relation(fields: [tokenId], references: [id])
+  @@unique([tokenMint, side, assetMint])
+}
+
+model Transaction {
+  id String @id @default(cuid())
+  signature String @unique
+  kind String
+  slot BigInt?
+  status TransactionStatus @default(OBSERVED)
+  createdAt DateTime @default(now())
+  finalizedAt DateTime?
+}
