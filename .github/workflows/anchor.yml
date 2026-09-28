@@ -35,7 +35,17 @@ jobs:
         run: |
           cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
       - name: Build verified program artifact
-        run: anchor build
+        shell: bash
+        run: |
+          set +e
+          anchor build > anchor-build.log 2>&1
+          status=$?
+          cat anchor-build.log
+          if [ "$status" -ne 0 ]; then
+            summary=$(tail -n 80 anchor-build.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
+            echo "::error title=Anchor build failed::$summary"
+          fi
+          exit "$status"
       - name: Upload program and IDL
         uses: actions/upload-artifact@v4
         with:

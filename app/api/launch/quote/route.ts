@@ -36,7 +36,11 @@ export async function POST(request: Request) {
       traderOutputModified: false, protocolShareBps: parsed.data.protocolShareBps,
       canonicalPairDecimals: resolvedPair.decimals,
       routeTrigger: { minimumRawAmount: (5n * 10n ** BigInt(Math.max(0, resolvedPair.decimals - 2))).toString(), displayAmount: "0.05", maximumIntervalSeconds: 1800 },
-      executionReady: Boolean(process.env.DIRECTIONAL_FEE_PROGRAM_ID),
+      executionReady: Boolean(
+        process.env.DIRECTIONAL_FEE_PROGRAM_ID &&
+        process.env.ROUTE_AUTHORITY_PUBLIC_KEY &&
+        process.env.MAINNET_CANARY_VERIFIED === "true"
+      ),
     });
   } catch (error) {
     return NextResponse.json({ code: "QUOTE_FAILED", message: error instanceof Error ? error.message : "Quote validation failed" }, { status: 503 });

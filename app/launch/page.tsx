@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, ImagePlus, LoaderCircle, ShieldCheck } from "lucide-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { Keypair, Transaction } from "@solana/web3.js";
 import { ASSETS } from "@/lib/data";
 
 const steps = ["Token", "Pump", "Fees", "Destination", "Review", "Launch"];
@@ -12,6 +15,9 @@ const knownAssets: AssetOption[] = Object.values(ASSETS)
   .map(({ mint, symbol, name }) => ({ mint, symbol, name }));
 
 export default function LaunchPage() {
+  const { connection } = useConnection();
+  const { connected, publicKey, sendTransaction } = useWallet();
+  const { setVisible } = useWalletModal();
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
@@ -19,12 +25,15 @@ export default function LaunchPage() {
   const [website, setWebsite] = useState("");
   const [xUrl, setXUrl] = useState("");
   const [telegram, setTelegram] = useState("");
-  const [imageName, setImageName] = useState("");
+  const [image, setImage] = useState<File | null>(null);
   const [pairMint, setPairMint] = useState(ASSETS.SOL.mint);
   const [buyMint, setBuyMint] = useState(ASSETS.TSLAX.mint);
   const [sellMint, setSellMint] = useState(ASSETS.SPCX.mint);
   const [pumpAssets, setPumpAssets] = useState<AssetOption[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(true);
+  const [launching, setLaunching] = useState(false);
+  const [launchError, setLaunchError] = useState("");
+  const [launched, setLaunched] = useState<{ mint: string; signature: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -43,7 +52,88 @@ export default function LaunchPage() {
   const pairLabel = pair?.symbol ?? shortMint(pairMint);
   const buyLabel = buy?.symbol ?? shortMint(buyMint);
   const sellLabel = sell?.symbol ?? shortMint(sellMint);
-  const canContinue = step !== 0 || Boolean(name.trim() && symbol.trim());
+  const canContinue = step !== 0 || Boolean(name.trim() && symbol.trim() && image);
+
+  async function launch() {
+    if (!connected || !publicKey) {
+      setVisible(true);
+      return;
+    }
+    if (!image) {
+      setLaunchError("Choose a token image before launching.");
+      setStep(0);
+      return;
+    }
+
+    setLaunching(true);
+    setLaunchError("");
+    try {
+      const parameters = {
+        name: name.trim(),
+        symbol: symbol.trim(),
+        canonicalPairMint: pairMint,
+        buyFeeAssetMint: buyMint,
+        sellFeeAssetMint: sellMint,
+        protocolShareBps: 500,
+      };
+      const quoteResponse = await fetch("/api/launch/quote", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(parameters),
+      });
+      const quote = await quoteResponse.json();
+      if (!quoteResponse.ok) throw new Error(quote.message ?? quote.code ?? "Launch validation failed");
+      if (!quote.executionReady) {
+        throw new Error("Mainnet launch is still locked while the custody program completes its canary checks.");
+      }
+
+      const metadataForm = new FormData();
+      metadataForm.set("image", image);
+      metadataForm.set("name", name.trim());
+      metadataForm.set("symbol", symbol.trim());
+      metadataForm.set("description", description.trim());
+      metadataForm.set("website", website.trim());
+      metadataForm.set("twitter", xUrl.trim());
+      metadataForm.set("telegram", telegram.trim());
+      const metadataResponse = await fetch("/api/metadata", { method: "POST", body: metadataForm });
+      const metadata = await metadataResponse.json();
+      if (!metadataResponse.ok) throw new Error(metadata.message ?? metadata.code ?? "Metadata upload failed");
+
+      const mint = Keypair.generate();
+      const launchResponse = await fetch("/api/launch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...parameters,
+          authority: publicKey.toBase58(),
+          mint: mint.publicKey.toBase58(),
+          metadataUri: metadata.uri,
+          maxSlippageBps: 100,
+        }),
+      });
+      const launchPayload = await launchResponse.json();
+      if (!launchResponse.ok) throw new Error(launchPayload.message ?? launchPayload.code ?? "Launch construction failed");
+
+      const transaction = Transaction.from(
+        Uint8Array.from(atob(launchPayload.transaction), (character) => character.charCodeAt(0)),
+      );
+      transaction.partialSign(mint);
+      const signature = await sendTransaction(transaction, connection, {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+      await connection.confirmTransaction({
+        signature,
+        blockhash: launchPayload.blockhash,
+        lastValidBlockHeight: launchPayload.lastValidBlockHeight,
+      }, "confirmed");
+      setLaunched({ mint: launchPayload.mint, signature });
+    } catch (error) {
+      setLaunchError(error instanceof Error ? error.message : "Launch failed");
+    } finally {
+      setLaunching(false);
+    }
+  }
 
   return <main className="shell">
     <div className="grid min-h-[calc(100vh-65px)] border-x border-b hairline lg:grid-cols-[280px_1fr]">
@@ -63,7 +153,7 @@ export default function LaunchPage() {
             {step === 0 && <div className="grid gap-4 sm:grid-cols-[1fr_180px]">
               <Field label="Token name" value={name} onChange={setName} placeholder="e.g. Orbit"/>
               <Field label="Ticker" value={symbol} onChange={(value) => setSymbol(value.toUpperCase().slice(0, 13))} placeholder="ORBIT"/>
-              <label className="sm:col-span-2"><span className="eyebrow">Token image</span><span className="focus-ring mt-2 flex h-24 items-center justify-center gap-3 border border-dashed hairline bg-[#0f1216] text-xs text-[#727b82]"><ImagePlus size={17}/>{imageName || "Choose PNG, JPG, or WebP"}<input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setImageName(event.target.files?.[0]?.name ?? "")}/></span></label>
+              <label className="sm:col-span-2"><span className="eyebrow">Token image</span><span className="focus-ring mt-2 flex h-24 items-center justify-center gap-3 border border-dashed hairline bg-[#0f1216] text-xs text-[#727b82]"><ImagePlus size={17}/>{image?.name || "Choose PNG, JPG, or WebP (max 5 MB)"}<input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setImage(event.target.files?.[0] ?? null)}/></span></label>
               <label className="sm:col-span-2"><span className="eyebrow">Description</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} className="focus-ring mt-2 h-28 w-full resize-none border hairline bg-[#0f1216] p-4 text-sm outline-none" placeholder="What is this token?"/></label>
               <Field label="Website" value={website} onChange={setWebsite} placeholder="https://"/><Field label="X / Twitter" value={xUrl} onChange={setXUrl} placeholder="https://x.com/"/><Field label="Telegram" value={telegram} onChange={setTelegram} placeholder="https://t.me/"/>
             </div>}
@@ -77,7 +167,9 @@ export default function LaunchPage() {
             {step >= 4 && <Review name={name} symbol={symbol} pair={pairLabel} buy={buyLabel} sell={sellLabel}/>}
           </div>
 
-          <div className="mt-12 flex items-center gap-3"><button disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))} className="focus-ring grid h-11 w-11 place-items-center border hairline disabled:opacity-30"><ArrowLeft size={15}/></button><button disabled={!canContinue} onClick={() => setStep((value) => Math.min(steps.length - 1, value + 1))} className="focus-ring flex h-11 items-center gap-3 bg-[#e9e9e4] px-6 text-xs font-semibold text-[#090b0e] disabled:cursor-not-allowed disabled:opacity-35">{step === steps.length - 1 ? "Connect wallet" : "Continue"}<ArrowRight size={14}/></button></div>
+          {launchError && <div role="alert" className="mt-8 max-w-2xl border border-[#6a3430] bg-[#211311] p-4 text-xs leading-5 text-[#e28b82]">{launchError}</div>}
+          {launched && <div className="mt-8 max-w-2xl border border-[#315944] bg-[#12231c] p-4 text-xs leading-5 text-[#76d8a8]">Launch confirmed. Mint: <span className="mono break-all">{launched.mint}</span></div>}
+          <div className="mt-12 flex items-center gap-3"><button disabled={step === 0 || launching} onClick={() => setStep((value) => Math.max(0, value - 1))} className="focus-ring grid h-11 w-11 place-items-center border hairline disabled:opacity-30"><ArrowLeft size={15}/></button><button disabled={!canContinue || launching} onClick={step === steps.length - 1 ? launch : () => setStep((value) => Math.min(steps.length - 1, value + 1))} className="focus-ring flex h-11 items-center gap-3 bg-[#e9e9e4] px-6 text-xs font-semibold text-[#090b0e] disabled:cursor-not-allowed disabled:opacity-35">{step === steps.length - 1 ? launching ? "Preparing launch…" : connected ? "Sign and launch" : "Connect wallet" : "Continue"}{launching ? <LoaderCircle className="animate-spin" size={14}/> : <ArrowRight size={14}/>}</button></div>
         </section>
 
         <aside className="border-t bg-[#0d1013] p-6 hairline sm:p-8 xl:border-l xl:border-t-0"><div className="eyebrow">Live configuration</div><div className="mt-7 border hairline bg-[#0f1216]"><div className="border-b p-5 hairline"><div className="text-2xl tracking-[-.04em]">${symbol || "YOUR TOKEN"}</div><div className="mono mt-2 text-[10px] text-[#687178]">{symbol || "TOKEN"} / {pairLabel}</div></div><RoutePreview side="BUY" pair={pairLabel} asset={buyLabel}/><RoutePreview side="SELL" pair={pairLabel} asset={sellLabel} borderTop/></div><div className="mt-5 border p-4 hairline"><Row label="Protocol share" value="5.00%"/><div className="mt-3"><Row label="Route trigger" value={`0.05 ${pairLabel} / 30m`}/></div></div><p className="mono mt-5 text-[9px] leading-5 text-[#596169]">ALL MINTS ARE REVALIDATED SERVER-SIDE AT QUOTE AND LAUNCH TIME.</p></aside>

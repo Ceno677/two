@@ -78,13 +78,13 @@ pub mod directional_fees {
         let output_before = ctx.accounts.output_vault.amount;
         require!(input_before >= args.amount_in, DirectionalFeeError::InsufficientRawFees);
 
+        require!(ctx.remaining_accounts.iter().any(|account| account.key() == config.key()), DirectionalFeeError::MissingConfigSigner);
         let metas = ctx.remaining_accounts.iter().map(|account| {
-            if account.key() == config.key() {
-                AccountMeta::new_readonly(account.key(), true)
-            } else if account.is_writable {
-                AccountMeta::new(account.key(), account.is_signer)
+            let is_config = account.key() == config.key();
+            if account.is_writable {
+                AccountMeta::new(account.key(), is_config)
             } else {
-                AccountMeta::new_readonly(account.key(), account.is_signer)
+                AccountMeta::new_readonly(account.key(), is_config)
             }
         }).collect::<Vec<_>>();
         let instruction = Instruction { program_id: JUPITER_V6, accounts: metas, data: args.jupiter_instruction_data };
@@ -239,4 +239,5 @@ pub enum DirectionalFeeError {
     #[msg("Invalid slippage")] InvalidSlippage,
     #[msg("Invalid mint")] InvalidMint,
     #[msg("Invalid authority")] InvalidAuthority,
+    #[msg("The route does not include the config PDA signer")] MissingConfigSigner,
 }
