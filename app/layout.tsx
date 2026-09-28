@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowUpRight, Hexagon } from "lucide-react";
+import { SolanaProvider } from "@/components/solana-provider";
+import "@solana/wallet-adapter-react-ui/styles.css";
 import "./globals.css";
 
 export const metadata: Metadata = { title: "Directional Fees", description: "Programmable creator revenue on Pump.fun" };
@@ -26,5 +28,5 @@ function Header() {
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><Header/>{children}<footer className="shell mt-20 border-t hairline py-8 flex flex-col sm:flex-row gap-4 justify-between mono text-[10px] text-[#59626a]"><span>DIRECTIONAL FEES / ONCHAIN CREATOR REVENUE</span><span>TRADERS TRADE NORMALLY. ONLY CREATOR FEES ARE ROUTED.</span></footer></body></html>;
+  return <html lang="en"><body><SolanaProvider><Header/>{children}<footer className="shell mt-20 border-t hairline py-8 flex flex-col sm:flex-row gap-4 justify-between mono text-[10px] text-[#59626a]"><span>DIRECTIONAL FEES / ONCHAIN CREATOR REVENUE</span><span>TRADERS TRADE NORMALLY. ONLY CREATOR FEES ARE ROUTED.</span></footer></SolanaProvider></body></html>;
 }

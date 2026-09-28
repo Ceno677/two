@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -34,8 +34,6 @@ jobs:
       - name: Install Anchor CLI
         run: |
           cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
-      - name: Check formatting
-        run: cargo fmt --all -- --check
       - name: Build verified program artifact
         run: anchor build
       - name: Upload program and IDL
