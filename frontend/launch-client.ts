@@ -253,27 +253,19 @@ async function launch(provider: WalletProvider, authority: string) {
   ));
   transactions[0].partialSign(mint);
 
-  setStatus("Approve token creation and fee setup in your wallet…", "working");
-  if (provider.signAndSendTransaction) {
-    for (let index = 0; index < transactions.length; index++) {
-      setStatus(index === 0 ? "Create the token in your wallet…" : "Confirm the fee settings…", "working");
-      const signature = (await provider.signAndSendTransaction(transactions[index])).signature;
-      await connection.confirmTransaction({ signature, blockhash: phases[index].blockhash, lastValidBlockHeight: phases[index].lastValidBlockHeight }, "confirmed");
-    }
-  } else if (provider.signAllTransactions) {
-    const signed = await provider.signAllTransactions(transactions);
-    for (let index = 0; index < signed.length; index++) {
-      setStatus(index === 0 ? "Creating token on Pump.fun…" : "Saving directional fee settings…", "working");
-      const signature = await connection.sendRawTransaction(signed[index].serialize(), { maxRetries: 3, skipPreflight: false });
-      await connection.confirmTransaction({ signature, blockhash: phases[index].blockhash, lastValidBlockHeight: phases[index].lastValidBlockHeight }, "confirmed");
-    }
-  } else if (provider.signTransaction) {
-    for (let index = 0; index < transactions.length; index++) {
-      const signed = await provider.signTransaction(transactions[index]);
-      const signature = await connection.sendRawTransaction(signed.serialize(), { maxRetries: 3, skipPreflight: false });
-      await connection.confirmTransaction({ signature, blockhash: phases[index].blockhash, lastValidBlockHeight: phases[index].lastValidBlockHeight }, "confirmed");
-    }
-  } else throw new Error("This wallet cannot sign Solana transactions.");
+  setStatus("Approve token creation in your wallet…", "working");
+  if (!provider.signTransaction) throw new Error("This wallet cannot sign Solana transactions.");
+  const signed = await provider.signTransaction(transactions[0]);
+  setStatus("Submitting through Helius and waiting for confirmation…", "working");
+  const submitted = await json(await fetch("/api/transaction/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      transaction: Buffer.from(signed.serialize()).toString("base64"),
+      blockhash: phases[0].blockhash,
+      lastValidBlockHeight: phases[0].lastValidBlockHeight,
+    }),
+  }));
   const managed: ManagedLaunch = {
     mint: built.mint,
     symbol,
@@ -283,7 +275,7 @@ async function launch(provider: WalletProvider, authority: string) {
     sellSymbol: selectedSymbol(el<HTMLSelectElement>("#tl-sell")!),
   };
   localStorage.setItem(LAST_LAUNCH_KEY, JSON.stringify(managed));
-  setStatus(`Launch confirmed. Mint: ${built.mint}`, "success");
+  setStatus(`Launch confirmed. Mint: ${built.mint} · ${submitted.signature}`, "success");
 }
 
 async function setup() {
