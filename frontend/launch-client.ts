@@ -21,8 +21,22 @@ declare global {
 const rpc = "https://api.mainnet-beta.solana.com";
 const connection = new Connection(rpc, "confirmed");
 const LAST_LAUNCH_KEY = "two:last-launch";
+const LAUNCHES_KEY = "two:launches";
+const PENDING_REGISTRATION_KEY = "two:pending-registration";
 
 type ManagedLaunch = { mint: string; symbol: string; pairSymbol: string; pairDecimals: number; buySymbol: string; sellSymbol: string };
+
+function rememberLaunch(launch: ManagedLaunch) {
+  let launches: ManagedLaunch[] = [];
+  try {
+    const stored = JSON.parse(localStorage.getItem(LAUNCHES_KEY) ?? "[]");
+    if (Array.isArray(stored)) launches = stored;
+  } catch {
+    // A damaged cache should never block a confirmed launch.
+  }
+  localStorage.setItem(LAUNCHES_KEY, JSON.stringify([launch, ...launches.filter((item) => item.mint !== launch.mint)]));
+  localStorage.setItem(LAST_LAUNCH_KEY, JSON.stringify(launch));
+}
 
 function el<T extends Element>(selector: string) {
   return document.querySelector<T>(selector);
@@ -274,8 +288,33 @@ async function launch(provider: WalletProvider, authority: string) {
     buySymbol: selectedSymbol(el<HTMLSelectElement>("#tl-buy")!),
     sellSymbol: selectedSymbol(el<HTMLSelectElement>("#tl-sell")!),
   };
-  localStorage.setItem(LAST_LAUNCH_KEY, JSON.stringify(managed));
-  setStatus(`Launch confirmed. Mint: ${built.mint} · ${submitted.signature}`, "success");
+  rememberLaunch(managed);
+  const registration = {
+    signature: submitted.signature,
+    mint: built.mint,
+    creator: authority,
+    canonicalPairMint: pair,
+    buyFeeAssetMint: buy,
+    sellFeeAssetMint: sell,
+    symbol,
+    pairSymbol: managed.pairSymbol,
+    buySymbol: managed.buySymbol,
+    sellSymbol: managed.sellSymbol,
+  };
+  localStorage.setItem(PENDING_REGISTRATION_KEY, JSON.stringify(registration));
+  let indexed = false;
+  try {
+    await json(await fetch("/api/activity", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(registration),
+    }));
+    localStorage.removeItem(PENDING_REGISTRATION_KEY);
+    indexed = true;
+  } catch {
+    // Explore retries this confirmed registration on the next visit.
+  }
+  setStatus(`Launch confirmed${indexed ? " and added to Explore" : " (Explore sync pending)"}. Mint: ${built.mint} · ${submitted.signature}`, "success");
 }
 
 async function setup() {

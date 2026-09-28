@@ -7,6 +7,10 @@ type Launch = {
   sellRoutedRaw: string;
   enabled: boolean;
   paused: boolean;
+  symbol?: string | null;
+  pairSymbol?: string | null;
+  buySymbol?: string | null;
+  sellSymbol?: string | null;
 };
 
 type Asset = { mint: string; symbol: string | null };
@@ -20,6 +24,8 @@ type LocalLaunch = {
 };
 
 const LAST_LAUNCH_KEY = "two:last-launch";
+const LAUNCHES_KEY = "two:launches";
+const PENDING_REGISTRATION_KEY = "two:pending-registration";
 
 function short(value: string) {
   return `${value.slice(0, 4)}…${value.slice(-4)}`;
@@ -35,14 +41,37 @@ function escapeHtml(value: string) {
   })[character] ?? character);
 }
 
-function readLastLaunch(): LocalLaunch | null {
+function isLocalLaunch(value: unknown): value is LocalLaunch {
+  if (!value || typeof value !== "object") return false;
+  const launch = value as Partial<LocalLaunch>;
+  return typeof launch.mint === "string" && typeof launch.symbol === "string"
+    && typeof launch.pairSymbol === "string" && typeof launch.buySymbol === "string" && typeof launch.sellSymbol === "string";
+}
+
+function readLocalLaunches(): LocalLaunch[] {
   try {
-    const launch = JSON.parse(localStorage.getItem(LAST_LAUNCH_KEY) ?? "null") as Partial<LocalLaunch> | null;
-    if (!launch || typeof launch.mint !== "string" || typeof launch.symbol !== "string") return null;
-    if (typeof launch.pairSymbol !== "string" || typeof launch.buySymbol !== "string" || typeof launch.sellSymbol !== "string") return null;
-    return launch as LocalLaunch;
+    const launches = JSON.parse(localStorage.getItem(LAUNCHES_KEY) ?? "[]") as unknown;
+    const valid = Array.isArray(launches) ? launches.filter(isLocalLaunch) : [];
+    const legacy = JSON.parse(localStorage.getItem(LAST_LAUNCH_KEY) ?? "null") as unknown;
+    if (isLocalLaunch(legacy) && !valid.some((launch) => launch.mint === legacy.mint)) valid.unshift(legacy);
+    return valid;
   } catch {
-    return null;
+    return [];
+  }
+}
+
+async function retryPendingRegistration() {
+  const pending = localStorage.getItem(PENDING_REGISTRATION_KEY);
+  if (!pending) return;
+  try {
+    const response = await fetch("/api/activity", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: pending,
+    });
+    if (response.ok) localStorage.removeItem(PENDING_REGISTRATION_KEY);
+  } catch {
+    // The local launch remains visible and the registration can retry later.
   }
 }
 
@@ -72,7 +101,8 @@ async function setupExplore() {
   const root = document.querySelector<HTMLElement>("#two-live-root");
   if (!root) return;
   addStyles();
-  const localLaunch = readLastLaunch();
+  const localLaunches = readLocalLaunches();
+  await retryPendingRegistration();
 
   try {
     const [activityResponse, assetsResponse] = await Promise.all([fetch("/api/activity"), fetch("/api/assets")]);
@@ -90,13 +120,14 @@ async function setupExplore() {
     const grid = root.querySelector<HTMLElement>(".two-live-grid");
     if (!grid) return;
 
-    const hasLocalLaunch = Boolean(localLaunch && !launches.some((launch) => launch.mint === localLaunch.mint));
-    if (launches.length === 0 && !hasLocalLaunch) {
+    const publicMints = new Set(launches.map((launch) => launch.mint));
+    const localOnlyLaunches = localLaunches.filter((launch) => !publicMints.has(launch.mint));
+    if (launches.length === 0 && localOnlyLaunches.length === 0) {
       grid.innerHTML = '<div class="two-live-empty"><strong>No launches yet</strong><span>The first token launched through TWO will appear here automatically.</span><a href="/launch">Launch the first token</a></div>';
       return;
     }
 
-    if (localLaunch && hasLocalLaunch) appendLocalCard(grid, localLaunch);
+    for (const launch of localOnlyLaunches) appendLocalCard(grid, launch);
 
     for (const launch of launches) {
       const card = document.createElement("a");
@@ -105,17 +136,17 @@ async function setupExplore() {
       card.target = "_blank";
       card.rel = "noopener noreferrer";
       card.innerHTML = `
-        <div class="two-live-token"><strong>${short(launch.mint)}</strong><span>${escapeHtml(labels.get(launch.canonicalPairMint) ?? short(launch.canonicalPairMint))} pair</span></div>
-        <div class="two-live-route"><span class="buy">BUY FEES</span><b>→ ${escapeHtml(labels.get(launch.buyFeeAssetMint) ?? short(launch.buyFeeAssetMint))}</b></div>
-        <div class="two-live-route"><span class="sell">SELL FEES</span><b>→ ${escapeHtml(labels.get(launch.sellFeeAssetMint) ?? short(launch.sellFeeAssetMint))}</b></div>
+        <div class="two-live-token"><strong>${launch.symbol ? `$${escapeHtml(launch.symbol)}` : short(launch.mint)}</strong><span>${escapeHtml(launch.pairSymbol ?? labels.get(launch.canonicalPairMint) ?? short(launch.canonicalPairMint))} pair</span></div>
+        <div class="two-live-route"><span class="buy">BUY FEES</span><b>→ ${escapeHtml(launch.buySymbol ?? labels.get(launch.buyFeeAssetMint) ?? short(launch.buyFeeAssetMint))}</b></div>
+        <div class="two-live-route"><span class="sell">SELL FEES</span><b>→ ${escapeHtml(launch.sellSymbol ?? labels.get(launch.sellFeeAssetMint) ?? short(launch.sellFeeAssetMint))}</b></div>
       `;
       grid.appendChild(card);
     }
   } catch {
-    if (localLaunch) {
+    if (localLaunches.length > 0) {
       root.innerHTML = '<div class="two-live-grid"></div>';
       const grid = root.querySelector<HTMLElement>(".two-live-grid");
-      if (grid) appendLocalCard(grid, localLaunch);
+      if (grid) for (const launch of localLaunches) appendLocalCard(grid, launch);
       return;
     }
     root.innerHTML = '<div class="two-live-empty"><strong>Launches could not be loaded</strong><span>Refresh the page to try the Solana connection again.</span></div>';
