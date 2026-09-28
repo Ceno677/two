@@ -7,10 +7,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-directional_fees = "3LLHFB9w9FVXYRUbfVa1ioW6C8v4Txt6C8c474xbV3uU"
+directional_fees = "5Ets22zpVnCjn7m5uFrS91Rs5Eug1nFo5PKwbq8J1A7J"
 
 [programs.mainnet]
-directional_fees = "3LLHFB9w9FVXYRUbfVa1ioW6C8v4Txt6C8c474xbV3uU"
+directional_fees = "5Ets22zpVnCjn7m5uFrS91Rs5Eug1nFo5PKwbq8J1A7J"
 
 [provider]
 cluster = "localnet"

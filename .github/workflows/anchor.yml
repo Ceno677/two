@@ -27,11 +27,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - name: Restore Anchor CLI
+        id: anchor-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/anchor
+          key: anchor-cli-0.31.1-${{ runner.os }}-${{ runner.arch }}
       - name: Install Solana CLI
         run: |
           sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.0/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
       - name: Install Anchor CLI
+        if: steps.anchor-cache.outputs.cache-hit != 'true'
         run: |
           cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
       - name: Build verified program artifact

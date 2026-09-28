@@ -5,6 +5,10 @@ import {
   Transaction,
 } from "@solana/web3.js";
 import { OnlinePumpSdk, PUMP_SDK } from "@pump-fun/pump-sdk";
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token";
 import { z } from "zod";
 import { getConnection } from "@/lib/solana";
 import { initializeDirectionalConfigInstruction } from "@/lib/directional-program";
@@ -98,6 +102,19 @@ export async function POST(request: Request) {
       quoteTokenProgram: resolvedPair.quoteTokenProgram,
       holderReward: false,
     });
+    const configQuoteVault = getAssociatedTokenAddressSync(
+      resolvedPair.mint,
+      config,
+      true,
+      resolvedPair.quoteTokenProgram,
+    );
+    const createConfigQuoteVault = createAssociatedTokenAccountIdempotentInstruction(
+      authority,
+      configQuoteVault,
+      config,
+      resolvedPair.mint,
+      resolvedPair.quoteTokenProgram,
+    );
     const latest = await connection.getLatestBlockhash("confirmed");
     const transaction = new Transaction({
       feePayer: authority,
@@ -107,12 +124,14 @@ export async function POST(request: Request) {
       ComputeBudgetProgram.setComputeUnitLimit({ units: 500_000 }),
       createCoin,
       initializeConfig,
+      createConfigQuoteVault,
     );
 
     return NextResponse.json({
       transaction: transaction.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
       mint: mint.toBase58(),
       config: config.toBase58(),
+      configQuoteVault: configQuoteVault.toBase58(),
       blockhash: latest.blockhash,
       lastValidBlockHeight: latest.lastValidBlockHeight,
     });

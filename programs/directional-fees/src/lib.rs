@@ -6,7 +6,7 @@ use anchor_lang::solana_program::{
 };
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-declare_id!("3LLHFB9w9FVXYRUbfVa1ioW6C8v4Txt6C8c474xbV3uU");
+declare_id!("5Ets22zpVnCjn7m5uFrS91Rs5Eug1nFo5PKwbq8J1A7J");
 
 const JUPITER_V6: Pubkey = pubkey!("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
 const MAX_PROTOCOL_SHARE_BPS: u16 = 2_000;
@@ -39,7 +39,7 @@ pub mod directional_fees {
         config.protocol_share_bps = args.protocol_share_bps;
         config.max_slippage_bps = args.max_slippage_bps;
         config.enabled = true;
-        config.paused = true;
+        config.paused = false;
         config.bump = ctx.bumps.config;
         Ok(())
     }
