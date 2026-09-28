@@ -7,7 +7,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const source = join(root, "two", "public");
 const destination = join(root, "public");
 const pages = ["index.html", "launch.html", "explore.html", "docs.html"];
-const assets = ["two.png", "favicon.png", "apple-touch-icon.png", "og.png"];
+const assets = ["two.png", "favicon.png", "apple-touch-icon.png", "og.png", "two-live.js"];
 
 const liveExploreShell = `<section class="two-explore">
   <div class="two-page-inner">
@@ -51,6 +51,9 @@ for (const page of pages) {
     .replaceAll("on NEAR Protocol", "on Solana")
     .replaceAll(">NEAR Intents<", ">Jupiter<")
     .replace("</body>", '<script src="/two-nav.js" defer></script></body>');
+  if (page === "index.html") {
+    html = html.replace("</body>", '<script src="/two-live.js" defer></script></body>');
+  }
   if (page === "launch.html") {
     html = html.replace("</body>", '<script src="/launch-client.js" defer></script></body>');
   }
