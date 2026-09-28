@@ -180,7 +180,7 @@ export async function POST(request: Request) {
     const body = new FormData();
     body.set("network", "public");
     body.set("name", `two-launch-${mint}.json`);
-    body.set("keyvalues", JSON.stringify({ keyvalues: index }));
+    body.set("keyvalues", JSON.stringify(index));
     body.set("file", new File([JSON.stringify(record)], `two-launch-${mint}.json`, { type: "application/json" }));
     const upload = await fetch("https://uploads.pinata.cloud/v3/files", {
       method: "POST",
