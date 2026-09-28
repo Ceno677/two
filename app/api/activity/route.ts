@@ -166,10 +166,21 @@ export async function POST(request: Request) {
       buySymbol: value.buySymbol,
       sellSymbol: value.sellSymbol,
     };
+    const index = {
+      app: record.app,
+      kind: record.kind,
+      signature: record.signature,
+      mint: record.mint,
+      creator: record.creator,
+      canonicalPairMint: record.canonicalPairMint,
+      buyFeeAssetMint: record.buyFeeAssetMint,
+      sellFeeAssetMint: record.sellFeeAssetMint,
+      symbol: record.symbol,
+    };
     const body = new FormData();
     body.set("network", "public");
     body.set("name", `two-launch-${mint}.json`);
-    body.set("keyvalues", JSON.stringify(record));
+    body.set("keyvalues", JSON.stringify({ keyvalues: index }));
     body.set("file", new File([JSON.stringify(record)], `two-launch-${mint}.json`, { type: "application/json" }));
     const upload = await fetch("https://uploads.pinata.cloud/v3/files", {
       method: "POST",
