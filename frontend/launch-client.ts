@@ -6,6 +6,7 @@ type WalletProvider = {
   connect(): Promise<{ publicKey: { toString(): string } }>;
   signAndSendTransaction?(transaction: Transaction): Promise<{ signature: string }>;
   signTransaction?(transaction: Transaction): Promise<Transaction>;
+  signAllTransactions?(transactions: Transaction[]): Promise<Transaction[]>;
 };
 
 declare global {
@@ -163,24 +164,39 @@ async function launch(provider: WalletProvider, authority: string) {
       maxSlippageBps: 100,
     }),
   }));
-  const transaction = Transaction.from(Uint8Array.from(atob(built.transaction), (character) => character.charCodeAt(0)));
-  transaction.partialSign(mint);
+  const phases = built.transactions as Array<{
+    kind: "CREATE_TOKEN" | "CONFIGURE_DIRECTIONAL_FEES";
+    transaction: string;
+    blockhash: string;
+    lastValidBlockHeight: number;
+  }>;
+  if (!Array.isArray(phases) || phases.length !== 2) throw new Error("Launch builder returned an invalid transaction set.");
+  const transactions = phases.map((phase) => Transaction.from(
+    Uint8Array.from(atob(phase.transaction), (character) => character.charCodeAt(0)),
+  ));
+  transactions[0].partialSign(mint);
 
-  setStatus("Approve the launch in your wallet…", "working");
-  let signature: string;
-  if (provider.signAndSendTransaction) {
-    signature = (await provider.signAndSendTransaction(transaction)).signature;
+  setStatus("Approve token creation and fee setup in your wallet…", "working");
+  if (provider.signAllTransactions) {
+    const signed = await provider.signAllTransactions(transactions);
+    for (let index = 0; index < signed.length; index++) {
+      setStatus(index === 0 ? "Creating token on Pump.fun…" : "Saving directional fee settings…", "working");
+      const signature = await connection.sendRawTransaction(signed[index].serialize(), { maxRetries: 3, skipPreflight: false });
+      await connection.confirmTransaction({ signature, blockhash: phases[index].blockhash, lastValidBlockHeight: phases[index].lastValidBlockHeight }, "confirmed");
+    }
+  } else if (provider.signAndSendTransaction) {
+    for (let index = 0; index < transactions.length; index++) {
+      setStatus(index === 0 ? "Create the token in your wallet…" : "Confirm the fee settings…", "working");
+      const signature = (await provider.signAndSendTransaction(transactions[index])).signature;
+      await connection.confirmTransaction({ signature, blockhash: phases[index].blockhash, lastValidBlockHeight: phases[index].lastValidBlockHeight }, "confirmed");
+    }
   } else if (provider.signTransaction) {
-    const signed = await provider.signTransaction(transaction);
-    signature = await connection.sendRawTransaction(signed.serialize(), { maxRetries: 3, skipPreflight: false });
-  } else {
-    throw new Error("This wallet cannot sign Solana transactions.");
-  }
-  await connection.confirmTransaction({
-    signature,
-    blockhash: built.blockhash,
-    lastValidBlockHeight: built.lastValidBlockHeight,
-  }, "confirmed");
+    for (let index = 0; index < transactions.length; index++) {
+      const signed = await provider.signTransaction(transactions[index]);
+      const signature = await connection.sendRawTransaction(signed.serialize(), { maxRetries: 3, skipPreflight: false });
+      await connection.confirmTransaction({ signature, blockhash: phases[index].blockhash, lastValidBlockHeight: phases[index].lastValidBlockHeight }, "confirmed");
+    }
+  } else throw new Error("This wallet cannot sign Solana transactions.");
   setStatus(`Launch confirmed. Mint: ${built.mint}`, "success");
 }
 

@@ -39,6 +39,8 @@ pub mod directional_fees {
         config.max_batch_interval_secs = args.max_batch_interval_secs;
         config.protocol_share_bps = args.protocol_share_bps;
         config.max_slippage_bps = args.max_slippage_bps;
+        config.buy_routed_raw = 0;
+        config.sell_routed_raw = 0;
         config.enabled = true;
         config.paused = false;
         config.bump = ctx.bumps.config;
@@ -58,8 +60,11 @@ pub mod directional_fees {
 
     /// Executes one pre-authorized exact-input Jupiter route. The receipt PDA
     /// makes the batch id single-use. Output and spend are verified after CPI.
-    pub fn execute_route(ctx: Context<ExecuteRoute>, args: ExecuteRouteArgs) -> Result<()> {
-        let config = &ctx.accounts.config;
+    pub fn execute_route<'info>(
+        ctx: Context<'_, '_, '_, 'info, ExecuteRoute<'info>>,
+        args: ExecuteRouteArgs,
+    ) -> Result<()> {
+        let config = &mut ctx.accounts.config;
         require!(config.enabled && !config.paused, DirectionalFeeError::RoutingPaused);
         require!(Clock::get()?.slot <= args.expiry_slot, DirectionalFeeError::RouteExpired);
         require!(args.amount_in > 0 && args.minimum_output > 0, DirectionalFeeError::InvalidRouteAmount);
@@ -79,7 +84,7 @@ pub mod directional_fees {
         // account. Move only the requested surplus into the config's WSOL ATA
         // so Jupiter can consume it like every other quote asset.
         if config.canonical_pair_mint == WRAPPED_SOL_MINT {
-            let config_info = ctx.accounts.config.to_account_info();
+            let config_info = config.to_account_info();
             let input_info = ctx.accounts.input_vault.to_account_info();
             let rent_floor = Rent::get()?.minimum_balance(config_info.data_len());
             let available = config_info.lamports().saturating_sub(rent_floor);
@@ -128,6 +133,19 @@ pub mod directional_fees {
         let received = ctx.accounts.output_vault.amount.checked_sub(output_before).ok_or(DirectionalFeeError::InvalidSettlement)?;
         require!(spent > 0 && spent <= args.amount_in, DirectionalFeeError::ExcessiveInputSpent);
         require!(received >= args.minimum_output, DirectionalFeeError::MinimumOutputNotMet);
+
+        match args.side {
+            TradeSide::Buy => {
+                config.buy_routed_raw = config.buy_routed_raw
+                    .checked_add(spent)
+                    .ok_or(DirectionalFeeError::InvalidSettlement)?;
+            }
+            TradeSide::Sell => {
+                config.sell_routed_raw = config.sell_routed_raw
+                    .checked_add(spent)
+                    .ok_or(DirectionalFeeError::InvalidSettlement)?;
+            }
+        }
 
         let receipt = &mut ctx.accounts.receipt;
         receipt.config = config.key();
@@ -190,6 +208,8 @@ pub struct DirectionalFeeConfig {
     pub max_batch_interval_secs: u32,
     pub protocol_share_bps: u16,
     pub max_slippage_bps: u16,
+    pub buy_routed_raw: u64,
+    pub sell_routed_raw: u64,
     pub enabled: bool,
     pub paused: bool,
     pub bump: u8,

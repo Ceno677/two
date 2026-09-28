@@ -113,25 +113,39 @@ export async function POST(request: Request) {
       resolvedPair.mint,
       resolvedPair.quoteTokenProgram,
     );
-    const latest = await connection.getLatestBlockhash("confirmed");
-    const transaction = new Transaction({
+    const createBlockhash = await connection.getLatestBlockhash("confirmed");
+    const createTransaction = new Transaction({
       feePayer: authority,
-      blockhash: latest.blockhash,
-      lastValidBlockHeight: latest.lastValidBlockHeight,
+      blockhash: createBlockhash.blockhash,
+      lastValidBlockHeight: createBlockhash.lastValidBlockHeight,
     }).add(
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 500_000 }),
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
       createCoin,
+    );
+    const configureBlockhash = await connection.getLatestBlockhash("confirmed");
+    const configureTransaction = new Transaction({
+      feePayer: authority,
+      blockhash: configureBlockhash.blockhash,
+      lastValidBlockHeight: configureBlockhash.lastValidBlockHeight,
+    }).add(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 250_000 }),
       initializeConfig,
       createConfigQuoteVault,
     );
 
+    const encode = (transaction: Transaction) => transaction.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false,
+    }).toString("base64");
+
     return NextResponse.json({
-      transaction: transaction.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+      transactions: [
+        { kind: "CREATE_TOKEN", transaction: encode(createTransaction), ...createBlockhash },
+        { kind: "CONFIGURE_DIRECTIONAL_FEES", transaction: encode(configureTransaction), ...configureBlockhash },
+      ],
       mint: mint.toBase58(),
       config: config.toBase58(),
       configQuoteVault: configQuoteVault.toBase58(),
-      blockhash: latest.blockhash,
-      lastValidBlockHeight: latest.lastValidBlockHeight,
     });
   } catch (error) {
     return NextResponse.json({

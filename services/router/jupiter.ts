@@ -1,6 +1,6 @@
 import { Connection } from "@solana/web3.js";
 import type { RouteQuote } from "@/lib/types";
-import type { BuiltRoute, FeeRouter, QuoteRequest, RouteStatus } from "./types";
+import type { BuiltRoute, FeeRouter, QuoteRequest, RouteStatus, RouterInstruction } from "./types";
 import { RouteUnavailableError, StaleQuoteError } from "./types";
 
 interface JupiterQuoteResponse {
@@ -38,17 +38,40 @@ export class JupiterAdapter implements FeeRouter {
     };
   }
 
-  async buildRoute(quote: RouteQuote, authority: string, destination: string): Promise<BuiltRoute> {
+  async buildRoute(quote: RouteQuote, authority: string, destination: string, payer = authority): Promise<BuiltRoute> {
     if (quote.expiresAt.getTime() <= Date.now()) throw new StaleQuoteError("Quote expired before route construction");
-    const response = await fetch(`${this.baseUrl}/swap`, {
+    const response = await fetch(`${this.baseUrl}/swap-instructions`, {
       method: "POST", headers: { "content-type": "application/json", ...this.headers() },
-      body: JSON.stringify({ quoteResponse: quote.raw, userPublicKey: authority, destinationTokenAccount: destination, wrapAndUnwrapSol: true, dynamicComputeUnitLimit: true }),
+      body: JSON.stringify({
+        quoteResponse: quote.raw,
+        userPublicKey: authority,
+        payer,
+        destinationTokenAccount: destination,
+        wrapAndUnwrapSol: false,
+        useSharedAccounts: true,
+        dynamicComputeUnitLimit: true,
+      }),
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new RouteUnavailableError(`Jupiter route build failed with HTTP ${response.status}`);
-    const raw = await response.json() as { swapTransaction?: string; error?: string };
-    if (!raw.swapTransaction) throw new RouteUnavailableError(raw.error ?? "Jupiter returned no transaction");
-    return { provider: "JUPITER", serializedTransaction: raw.swapTransaction, raw };
+    const raw = await response.json() as {
+      computeBudgetInstructions?: RouterInstruction[];
+      setupInstructions?: RouterInstruction[];
+      swapInstruction?: RouterInstruction;
+      cleanupInstruction?: RouterInstruction | null;
+      addressLookupTableAddresses?: string[];
+      error?: string;
+    };
+    if (!raw.swapInstruction) throw new RouteUnavailableError(raw.error ?? "Jupiter returned no swap instruction");
+    return {
+      provider: "JUPITER",
+      computeBudgetInstructions: raw.computeBudgetInstructions ?? [],
+      setupInstructions: raw.setupInstructions ?? [],
+      swapInstruction: raw.swapInstruction,
+      cleanupInstruction: raw.cleanupInstruction ?? null,
+      addressLookupTableAddresses: raw.addressLookupTableAddresses ?? [],
+      raw,
+    };
   }
 
   async getRouteStatus(signature: string): Promise<RouteStatus> {
