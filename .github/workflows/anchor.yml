@@ -1,0 +1,48 @@
+name: Anchor program
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Anchor.toml"
+      - "Cargo.toml"
+      - "programs/**"
+      - ".github/workflows/anchor.yml"
+  pull_request:
+    paths:
+      - "Anchor.toml"
+      - "Cargo.toml"
+      - "programs/**"
+      - ".github/workflows/anchor.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.0/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Install Anchor CLI
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Build verified program artifact
+        run: anchor build
+      - name: Upload program and IDL
+        uses: actions/upload-artifact@v4
+        with:
+          name: directional-fees-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            target/deploy/directional_fees.so
+            target/idl/directional_fees.json

@@ -7,3 +7,7 @@ generated
 *.tsbuildinfo
 
 .vercel
+target/
+.anchor/
+test-ledger/
+*-keypair.json
