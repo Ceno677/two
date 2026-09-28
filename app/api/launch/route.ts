@@ -3,7 +3,6 @@ import {
   ComputeBudgetProgram,
   PublicKey,
   Transaction,
-  TransactionInstruction,
 } from "@solana/web3.js";
 import { OnlinePumpSdk, PUMP_SDK } from "@pump-fun/pump-sdk";
 import { z } from "zod";
@@ -72,19 +71,6 @@ export async function POST(request: Request) {
       quoteTokenProgram: resolvedPair.quoteTokenProgram,
       holderReward: false,
     });
-    const memo = new TransactionInstruction({
-      programId: new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
-      keys: [{ pubkey: authority, isSigner: true, isWritable: false }],
-      data: Buffer.from(JSON.stringify({
-        app: "TWO",
-        version: 1,
-        mint: mint.toBase58(),
-        pair: pair.toBase58(),
-        buyFeeAsset: buyMint.toBase58(),
-        sellFeeAsset: sellMint.toBase58(),
-        mode: "direct-creator",
-      })),
-    });
     const createBlockhash = await connection.getLatestBlockhash("confirmed");
     const createTransaction = new Transaction({
       feePayer: authority,
@@ -93,7 +79,6 @@ export async function POST(request: Request) {
     }).add(
       ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
       createCoin,
-      memo,
     );
 
     const encode = (transaction: Transaction) => transaction.serialize({
