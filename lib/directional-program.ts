@@ -7,6 +7,7 @@ import {
 import type { RouterInstruction } from "@/services/router/types";
 
 const CONFIG_SEED = Buffer.from("directional-fee");
+export const DIRECTIONAL_CONFIG_ACCOUNT_SIZE = 299;
 
 function discriminator(name: string) {
   return createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
@@ -68,7 +69,7 @@ export interface DirectionalConfigAccount {
 }
 
 export function decodeDirectionalConfig(data: Buffer): DirectionalConfigAccount {
-  if (data.length < 299 || !data.subarray(0, 8).equals(accountDiscriminator("DirectionalFeeConfig"))) {
+  if (data.length < DIRECTIONAL_CONFIG_ACCOUNT_SIZE || !data.subarray(0, 8).equals(accountDiscriminator("DirectionalFeeConfig"))) {
     throw new Error("Invalid directional fee config account");
   }
   let offset = 8;
