@@ -261,7 +261,7 @@ async function launch(provider: WalletProvider, authority: string) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      transaction: Buffer.from(signed.serialize()).toString("base64"),
+      transaction: btoa(Array.from(signed.serialize(), (byte) => String.fromCharCode(byte)).join("")),
       blockhash: phases[0].blockhash,
       lastValidBlockHeight: phases[0].lastValidBlockHeight,
     }),
