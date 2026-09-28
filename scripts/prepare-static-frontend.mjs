@@ -28,12 +28,24 @@ for (const page of pages) {
   if (page === "launch.html") {
     html = html.replace("</body>", '<script src="/launch-client.js" defer></script></body>');
   }
+  if (page === "explore.html") {
+    html = html.replace("</body>", '<script src="/explore-client.js" defer></script></body>');
+  }
   writeFileSync(join(destination, page), html, "utf8");
 }
 
 await build({
   entryPoints: [join(root, "frontend", "launch-client.ts")],
   outfile: join(destination, "launch-client.js"),
+  bundle: true,
+  minify: true,
+  platform: "browser",
+  target: ["es2022"],
+});
+
+await build({
+  entryPoints: [join(root, "frontend", "explore-client.ts")],
+  outfile: join(destination, "explore-client.js"),
   bundle: true,
   minify: true,
   platform: "browser",
