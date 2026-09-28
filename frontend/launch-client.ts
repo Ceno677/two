@@ -177,17 +177,17 @@ async function launch(provider: WalletProvider, authority: string) {
   transactions[0].partialSign(mint);
 
   setStatus("Approve token creation and fee setup in your wallet…", "working");
-  if (provider.signAllTransactions) {
+  if (provider.signAndSendTransaction) {
+    for (let index = 0; index < transactions.length; index++) {
+      setStatus(index === 0 ? "Create the token in your wallet…" : "Confirm the fee settings…", "working");
+      const signature = (await provider.signAndSendTransaction(transactions[index])).signature;
+      await connection.confirmTransaction({ signature, blockhash: phases[index].blockhash, lastValidBlockHeight: phases[index].lastValidBlockHeight }, "confirmed");
+    }
+  } else if (provider.signAllTransactions) {
     const signed = await provider.signAllTransactions(transactions);
     for (let index = 0; index < signed.length; index++) {
       setStatus(index === 0 ? "Creating token on Pump.fun…" : "Saving directional fee settings…", "working");
       const signature = await connection.sendRawTransaction(signed[index].serialize(), { maxRetries: 3, skipPreflight: false });
-      await connection.confirmTransaction({ signature, blockhash: phases[index].blockhash, lastValidBlockHeight: phases[index].lastValidBlockHeight }, "confirmed");
-    }
-  } else if (provider.signAndSendTransaction) {
-    for (let index = 0; index < transactions.length; index++) {
-      setStatus(index === 0 ? "Create the token in your wallet…" : "Confirm the fee settings…", "working");
-      const signature = (await provider.signAndSendTransaction(transactions[index])).signature;
       await connection.confirmTransaction({ signature, blockhash: phases[index].blockhash, lastValidBlockHeight: phases[index].lastValidBlockHeight }, "confirmed");
     }
   } else if (provider.signTransaction) {
