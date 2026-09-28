@@ -21,6 +21,9 @@ for (const page of pages) {
     .replaceAll("https://flowfin.framer.website/", "https://near-jade.vercel.app/")
     .replaceAll("routed through NEAR Protocol", "routed on Solana")
     .replaceAll("Routing through NEAR Intents", "Routing through Jupiter")
+    .replaceAll("through NEAR Intents", "through Jupiter")
+    .replaceAll("on NEAR Protocol", "on Solana")
+    .replaceAll(">NEAR Intents<", ">Jupiter<")
     .replace("</body>", '<script src="/two-nav.js" defer></script></body>');
   if (page === "launch.html") {
     html = html.replace("</body>", '<script src="/launch-client.js" defer></script></body>');
